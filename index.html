@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>image × sound → video</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500&family=Zen+Kaku+Gothic+New:wght@300;400&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --ink: #1a1714;
+    --paper: #f5f0e8;
+    --pale: #ede7d9;
+    --mist: #c8bfaf;
+    --accent: #7a6a5a;
+    --warm: #a08060;
+    --red: #b04040;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+    font-weight: 300;
+    overflow-x: hidden;
+  }
+
+  /* grain overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.5;
+  }
+
+  .container {
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 64px 32px 80px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  /* header */
+  .header {
+    margin-bottom: 56px;
+    position: relative;
+  }
+
+  .header-mark {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 11px;
+    letter-spacing: 0.3em;
+    color: var(--mist);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .header h1 {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 22px;
+    font-weight: 400;
+    letter-spacing: 0.15em;
+    color: var(--ink);
+    line-height: 1.2;
+  }
+
+  .header h1 span {
+    display: block;
+    font-size: 13px;
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+    font-weight: 300;
+    letter-spacing: 0.2em;
+    color: var(--accent);
+    margin-top: 8px;
+  }
+
+  .header-line {
+    width: 40px;
+    height: 1px;
+    background: var(--mist);
+    margin-top: 20px;
+  }
+
+  /* drop zones */
+  .drop-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+
+  .drop-zone {
+    border: 1px solid var(--pale);
+    border-radius: 2px;
+    padding: 28px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+    background: rgba(255,255,255,0.4);
+  }
+
+  .drop-zone::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--warm);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  .drop-zone:hover::before { opacity: 0.04; }
+  .drop-zone.dragover { border-color: var(--warm); }
+  .drop-zone.dragover::before { opacity: 0.07; }
+  .drop-zone.filled { border-color: var(--accent); }
+
+  .drop-zone input { display: none; }
+
+  .drop-icon {
+    font-size: 28px;
+    margin-bottom: 10px;
+    display: block;
+    opacity: 0.5;
+    transition: opacity 0.3s;
+  }
+  .drop-zone:hover .drop-icon { opacity: 0.8; }
+  .drop-zone.filled .drop-icon { opacity: 1; }
+
+  .drop-label {
+    font-size: 11px;
+    letter-spacing: 0.25em;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 6px;
+    font-family: 'Shippori Mincho', serif;
+  }
+
+  .drop-hint {
+    font-size: 10px;
+    color: var(--mist);
+    letter-spacing: 0.1em;
+  }
+
+  .drop-filename {
+    font-size: 10px;
+    color: var(--accent);
+    letter-spacing: 0.05em;
+    margin-top: 8px;
+    word-break: break-all;
+    font-weight: 400;
+  }
+
+  /* preview section */
+  .preview-section {
+    margin-bottom: 32px;
+    display: none;
+  }
+
+  .preview-section.show { display: block; }
+
+  .section-label {
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    color: var(--mist);
+    margin-bottom: 12px;
+    font-family: 'Shippori Mincho', serif;
+  }
+
+  .image-preview {
+    width: 100%;
+    aspect-ratio: 9/16;
+    object-fit: cover;
+    border-radius: 2px;
+    display: block;
+    background: var(--pale);
+  }
+
+  .audio-preview {
+    width: 100%;
+    margin-top: 0;
+    accent-color: var(--accent);
+    opacity: 0.7;
+  }
+
+  /* options */
+  .options-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+
+  .option-group label {
+    display: block;
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    color: var(--mist);
+    margin-bottom: 8px;
+    font-family: 'Shippori Mincho', serif;
+  }
+
+  .option-group select,
+  .option-group input[type="range"] {
+    width: 100%;
+    background: transparent;
+    border: 1px solid var(--pale);
+    border-radius: 2px;
+    padding: 8px 10px;
+    font-size: 11px;
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+    color: var(--ink);
+    appearance: none;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+  }
+
+  .option-group select:focus { outline: none; border-color: var(--accent); }
+
+  /* fade toggle */
+  .fade-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 32px;
+  }
+
+  .toggle-track {
+    width: 36px;
+    height: 20px;
+    background: var(--pale);
+    border-radius: 10px;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.3s;
+    flex-shrink: 0;
+    border: 1px solid var(--mist);
+  }
+
+  .toggle-track.on { background: var(--accent); border-color: var(--accent); }
+
+  .toggle-thumb {
+    width: 14px;
+    height: 14px;
+    background: white;
+    border-radius: 50%;
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    transition: transform 0.3s ease;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  }
+
+  .toggle-track.on .toggle-thumb { transform: translateX(16px); }
+
+  .fade-toggle span {
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 0.15em;
+  }
+
+  /* canvas (hidden) */
+  #canvas { display: none; }
+
+  /* generate button */
+  .btn-generate {
+    width: 100%;
+    padding: 18px 0;
+    background: var(--ink);
+    color: var(--paper);
+    border: none;
+    border-radius: 2px;
+    font-family: 'Shippori Mincho', serif;
+    font-size: 13px;
+    letter-spacing: 0.4em;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+
+  .btn-generate::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--warm);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .btn-generate:hover::after { opacity: 0.15; }
+  .btn-generate:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* progress */
+  .progress-wrap {
+    display: none;
+    margin-bottom: 24px;
+  }
+
+  .progress-wrap.show { display: block; }
+
+  .progress-label {
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--accent);
+    margin-bottom: 8px;
+    font-family: 'Shippori Mincho', serif;
+  }
+
+  .progress-bar-bg {
+    height: 2px;
+    background: var(--pale);
+    border-radius: 1px;
+    overflow: hidden;
+  }
+
+  .progress-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 1px;
+    width: 0%;
+    transition: width 0.3s ease;
+  }
+
+  .progress-step {
+    font-size: 10px;
+    color: var(--mist);
+    margin-top: 6px;
+    letter-spacing: 0.1em;
+  }
+
+  /* result */
+  .result-section {
+    display: none;
+    margin-top: 8px;
+  }
+
+  .result-section.show { display: block; }
+
+  .result-video {
+    width: 100%;
+    border-radius: 2px;
+    display: block;
+    background: var(--ink);
+    margin-bottom: 16px;
+  }
+
+  .btn-download {
+    width: 100%;
+    padding: 14px 0;
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 2px;
+    font-family: 'Shippori Mincho', serif;
+    font-size: 12px;
+    letter-spacing: 0.4em;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-decoration: none;
+    display: block;
+    text-align: center;
+  }
+
+  .btn-download:hover {
+    background: var(--accent);
+    color: var(--paper);
+  }
+
+  /* footer */
+  .footer {
+    margin-top: 64px;
+    padding-top: 24px;
+    border-top: 1px solid var(--pale);
+    font-size: 10px;
+    color: var(--mist);
+    letter-spacing: 0.2em;
+    text-align: center;
+  }
+
+  /* error */
+  .error-msg {
+    display: none;
+    color: var(--red);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    margin-bottom: 16px;
+    padding: 10px 14px;
+    border: 1px solid rgba(176,64,64,0.2);
+    border-radius: 2px;
+    background: rgba(176,64,64,0.03);
+  }
+  .error-msg.show { display: block; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <div class="header-mark">video composer</div>
+    <h1>image × sound → video</h1>
+    <div class="header-line"></div>
+  </div>
+
+  <!-- Drop zones -->
+  <div class="drop-grid">
+    <div class="drop-zone" id="imgZone" onclick="document.getElementById('imgInput').click()">
+      <input type="file" id="imgInput" accept="image/*">
+      <span class="drop-icon">🖼</span>
+      <span class="drop-label">画像</span>
+      <span class="drop-hint">PNG / JPG / WEBP</span>
+      <div class="drop-filename" id="imgName"></div>
+    </div>
+
+    <div class="drop-zone" id="audioZone" onclick="document.getElementById('audioInput').click()">
+      <input type="file" id="audioInput" accept="audio/*">
+      <span class="drop-icon">🎵</span>
+      <span class="drop-label">音源</span>
+      <span class="drop-hint">MP3 / WAV / M4A</span>
+      <div class="drop-filename" id="audioName"></div>
+    </div>
+  </div>
+
+  <!-- Previews -->
+  <div class="preview-section" id="imgPreviewSection">
+    <div class="section-label">PREVIEW — IMAGE</div>
+    <img class="image-preview" id="imgPreview" alt="preview">
+  </div>
+
+  <div class="preview-section" id="audioPreviewSection" style="margin-top:16px">
+    <div class="section-label">PREVIEW — AUDIO</div>
+    <audio class="audio-preview" id="audioPreview" controls></audio>
+  </div>
+
+  <!-- Options -->
+  <div class="options-grid" style="margin-top:32px">
+    <div class="option-group">
+      <label>アスペクト比</label>
+      <select id="aspectSelect">
+        <option value="9:16">9:16（TikTok縦）</option>
+        <option value="1:1">1:1（正方形）</option>
+        <option value="16:9">16:9（横）</option>
+      </select>
+    </div>
+    <div class="option-group">
+      <label>画質</label>
+      <select id="qualitySelect">
+        <option value="high">高画質</option>
+        <option value="mid" selected>標準</option>
+        <option value="low">軽量</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Fade toggle -->
+  <div class="fade-toggle">
+    <div class="toggle-track on" id="fadeToggle" onclick="toggleFade()">
+      <div class="toggle-thumb"></div>
+    </div>
+    <span>音声フェードアウト（最後の3秒）</span>
+  </div>
+
+  <!-- Canvas (hidden) -->
+  <canvas id="canvas"></canvas>
+
+  <!-- Error -->
+  <div class="error-msg" id="errorMsg"></div>
+
+  <!-- Generate -->
+  <button class="btn-generate" id="generateBtn" onclick="generate()">
+    合成する
+  </button>
+
+  <!-- Progress -->
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-label" id="progressLabel">準備中...</div>
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill" id="progressFill"></div>
+    </div>
+    <div class="progress-step" id="progressStep"></div>
+  </div>
+
+  <!-- Result -->
+  <div class="result-section" id="resultSection">
+    <div class="section-label" style="margin-bottom:12px">RESULT</div>
+    <video class="result-video" id="resultVideo" controls playsinline></video>
+    <a class="btn-download" id="downloadLink">ダウンロード</a>
+  </div>
+
+  <div class="footer">image × sound → video &nbsp;/&nbsp; browser only</div>
+</div>
+
+<!-- FFmpeg.wasm -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ffmpeg.wasm/0.12.10/umd/ffmpeg.min.js" 
+  crossorigin="anonymous"
+  onerror="ffmpegLoadError()"></script>
+<!-- Fallback: use CDN directly -->
+<script>
+// ─────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────
+let imgFile = null;
+let audioFile = null;
+let fadeEnabled = true;
+let ffmpegLoaded = false;
+let ffmpeg = null;
+
+function ffmpegLoadError() {
+  console.warn('FFmpeg CDN load failed, will try on demand');
+}
+
+// ─────────────────────────────────────────────
+// Drag & Drop
+// ─────────────────────────────────────────────
+['imgZone', 'audioZone'].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('dragover'); });
+  el.addEventListener('dragleave', () => el.classList.remove('dragover'));
+  el.addEventListener('drop', e => {
+    e.preventDefault();
+    el.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    if (id === 'imgZone') handleImage(file);
+    else handleAudio(file);
+  });
+});
+
+document.getElementById('imgInput').addEventListener('change', e => {
+  if (e.target.files[0]) handleImage(e.target.files[0]);
+});
+document.getElementById('audioInput').addEventListener('change', e => {
+  if (e.target.files[0]) handleAudio(e.target.files[0]);
+});
+
+function handleImage(file) {
+  imgFile = file;
+  document.getElementById('imgName').textContent = file.name;
+  document.getElementById('imgZone').classList.add('filled');
+
+  const url = URL.createObjectURL(file);
+  const preview = document.getElementById('imgPreview');
+  preview.src = url;
+  document.getElementById('imgPreviewSection').classList.add('show');
+}
+
+function handleAudio(file) {
+  audioFile = file;
+  document.getElementById('audioName').textContent = file.name;
+  document.getElementById('audioZone').classList.add('filled');
+
+  const url = URL.createObjectURL(file);
+  const preview = document.getElementById('audioPreview');
+  preview.src = url;
+  document.getElementById('audioPreviewSection').classList.add('show');
+}
+
+// ─────────────────────────────────────────────
+// Fade toggle
+// ─────────────────────────────────────────────
+function toggleFade() {
+  fadeEnabled = !fadeEnabled;
+  const t = document.getElementById('fadeToggle');
+  t.classList.toggle('on', fadeEnabled);
+}
+
+// ─────────────────────────────────────────────
+// Error
+// ─────────────────────────────────────────────
+function showError(msg) {
+  const el = document.getElementById('errorMsg');
+  el.textContent = msg;
+  el.classList.add('show');
+}
+function clearError() {
+  document.getElementById('errorMsg').classList.remove('show');
+}
+
+// ─────────────────────────────────────────────
+// Progress
+// ─────────────────────────────────────────────
+function setProgress(pct, label, step) {
+  document.getElementById('progressFill').style.width = pct + '%';
+  if (label) document.getElementById('progressLabel').textContent = label;
+  if (step !== undefined) document.getElementById('progressStep').textContent = step;
+}
+
+// ─────────────────────────────────────────────
+// Main: generate
+// ─────────────────────────────────────────────
+async function generate() {
+  clearError();
+
+  if (!imgFile) { showError('画像ファイルを選択してください'); return; }
+  if (!audioFile) { showError('音源ファイルを選択してください'); return; }
+
+  const btn = document.getElementById('generateBtn');
+  btn.disabled = true;
+  document.getElementById('progressWrap').classList.add('show');
+  document.getElementById('resultSection').classList.remove('show');
+
+  try {
+    // Step 1: get audio duration
+    setProgress(5, '音源を読み込み中...', 'step 1 / 4');
+    const duration = await getAudioDuration(audioFile);
+
+    // Step 2: draw image onto canvas → get PNG frames (we'll use a single frame approach)
+    setProgress(15, '画像を処理中...', 'step 2 / 4');
+    const { width, height } = getCanvasDimensions();
+    const imageBitmap = await createImageBitmap(imgFile);
+
+    const canvas = document.getElementById('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+
+    // Draw image cover-fit
+    drawCoverFit(ctx, imageBitmap, width, height);
+
+    // Get PNG blob of the frame
+    const pngBlob = await canvasToBlob(canvas);
+
+    // Step 3: load FFmpeg
+    setProgress(30, 'FFmpegを読み込み中...', 'step 3 / 4');
+    await loadFFmpeg();
+
+    // Step 4: encode
+    setProgress(50, 'MP4を生成中...', 'step 4 / 4 — しばらくお待ちください');
+    const mp4Blob = await encodeMP4(pngBlob, audioFile, duration, width, height);
+
+    setProgress(100, '完成', '');
+
+    // Show result
+    const url = URL.createObjectURL(mp4Blob);
+    const video = document.getElementById('resultVideo');
+    video.src = url;
+
+    const dl = document.getElementById('downloadLink');
+    dl.href = url;
+    const ext = 'mp4';
+    const baseName = audioFile.name.replace(/\.[^.]+$/, '');
+    dl.download = `toi_${baseName}.${ext}`;
+
+    document.getElementById('resultSection').classList.add('show');
+
+  } catch (err) {
+    console.error(err);
+    showError('エラーが発生しました: ' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ─────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────
+function getAudioDuration(file) {
+  return new Promise((resolve, reject) => {
+    const audio = new Audio();
+    const url = URL.createObjectURL(file);
+    audio.src = url;
+    audio.addEventListener('loadedmetadata', () => {
+      URL.revokeObjectURL(url);
+      resolve(audio.duration);
+    });
+    audio.addEventListener('error', reject);
+  });
+}
+
+function getCanvasDimensions() {
+  const aspect = document.getElementById('aspectSelect').value;
+  const quality = document.getElementById('qualitySelect').value;
+  const base = quality === 'high' ? 1080 : quality === 'mid' ? 720 : 480;
+  if (aspect === '9:16') return { width: Math.round(base * 9/16), height: base };
+  if (aspect === '1:1') return { width: base, height: base };
+  return { width: base, height: Math.round(base * 9/16) };
+}
+
+function drawCoverFit(ctx, img, w, h) {
+  const imgAR = img.width / img.height;
+  const canvasAR = w / h;
+  let sw, sh, sx, sy;
+  if (imgAR > canvasAR) {
+    sh = img.height;
+    sw = sh * canvasAR;
+    sx = (img.width - sw) / 2;
+    sy = 0;
+  } else {
+    sw = img.width;
+    sh = sw / canvasAR;
+    sx = 0;
+    sy = (img.height - sh) / 2;
+  }
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
+}
+
+function canvasToBlob(canvas) {
+  return new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+}
+
+async function loadFFmpeg() {
+  if (ffmpegLoaded) return;
+
+  // Try FFmpeg.wasm from CDN
+  if (typeof FFmpegWASM !== 'undefined') {
+    // v0.12 API
+    const { FFmpeg } = FFmpegWASM;
+    ffmpeg = new FFmpeg();
+    await ffmpeg.load({
+      coreURL: 'https://cdnjs.cloudflare.com/ajax/libs/ffmpeg.wasm/0.12.10/umd/ffmpeg-core.js',
+      wasmURL: 'https://cdnjs.cloudflare.com/ajax/libs/ffmpeg.wasm/0.12.10/umd/ffmpeg-core.wasm',
+    });
+    ffmpegLoaded = true;
+    return;
+  }
+
+  // Try global FFmpeg (older API)
+  if (typeof createFFmpeg === 'function') {
+    ffmpeg = createFFmpeg({
+      corePath: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.10.0/dist/ffmpeg-core.js',
+      log: false,
+    });
+    await ffmpeg.load();
+    ffmpegLoaded = true;
+    return;
+  }
+
+  throw new Error('FFmpegが読み込めませんでした。ブラウザがSharedArrayBufferに対応していないか、ネットワークエラーの可能性があります。\nChromeまたはEdgeをお試しください。');
+}
+
+async function encodeMP4(pngBlob, audioFile, duration, width, height) {
+  // Detect API version
+  const isNewAPI = ffmpeg && typeof ffmpeg.writeFile === 'function';
+
+  const pngData = new Uint8Array(await pngBlob.arrayBuffer());
+  const audioData = new Uint8Array(await audioFile.arrayBuffer());
+  const audioExt = audioFile.name.split('.').pop().toLowerCase() || 'mp3';
+
+  const fps = 1; // static image — 1fps is enough, reduces file size
+  const totalFrames = Math.ceil(duration * fps);
+
+  if (isNewAPI) {
+    // v0.12 API
+    await ffmpeg.writeFile('image.png', pngData);
+    await ffmpeg.writeFile(`audio.${audioExt}`, audioData);
+
+    // Create a single-frame looped video
+    // Use -loop 1 with a still image + audio duration
+    const ffmpegArgs = [
+      '-loop', '1',
+      '-framerate', String(fps),
+      '-i', 'image.png',
+      '-i', `audio.${audioExt}`,
+      '-c:v', 'libx264',
+      '-tune', 'stillimage',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-pix_fmt', 'yuv420p',
+      '-t', String(duration),
+      '-shortest',
+    ];
+
+    if (fadeEnabled && duration > 3) {
+      ffmpegArgs.push('-af', `afade=t=out:st=${(duration - 3).toFixed(2)}:d=3`);
+    }
+
+    ffmpegArgs.push('out.mp4');
+
+    ffmpeg.on('progress', ({ progress }) => {
+      const pct = 50 + Math.round(progress * 49);
+      setProgress(pct, 'エンコード中...', `${Math.round(progress * 100)}%`);
+    });
+
+    await ffmpeg.exec(ffmpegArgs);
+    const data = await ffmpeg.readFile('out.mp4');
+    return new Blob([data.buffer], { type: 'video/mp4' });
+
+  } else {
+    // v0.10 API (fetchFile style)
+    const { fetchFile } = FFmpegWASM || window;
+
+    ffmpeg.FS('writeFile', 'image.png', pngData);
+    ffmpeg.FS('writeFile', `audio.${audioExt}`, audioData);
+
+    const ffmpegArgs = [
+      '-loop', '1',
+      '-framerate', String(fps),
+      '-i', 'image.png',
+      '-i', `audio.${audioExt}`,
+      '-c:v', 'libx264',
+      '-tune', 'stillimage',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-pix_fmt', 'yuv420p',
+      '-t', String(duration),
+      '-shortest',
+    ];
+
+    if (fadeEnabled && duration > 3) {
+      ffmpegArgs.push('-af', `afade=t=out:st=${(duration - 3).toFixed(2)}:d=3`);
+    }
+
+    ffmpegArgs.push('out.mp4');
+
+    ffmpeg.setProgress(({ ratio }) => {
+      const pct = 50 + Math.round(ratio * 49);
+      setProgress(pct, 'エンコード中...', `${Math.round(ratio * 100)}%`);
+    });
+
+    await ffmpeg.run(...ffmpegArgs);
+    const data = ffmpeg.FS('readFile', 'out.mp4');
+    return new Blob([data.buffer], { type: 'video/mp4' });
+  }
+}
+</script>
+</body>
+</html>
