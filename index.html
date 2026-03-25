@@ -615,6 +615,8 @@ async function generate() {
 
     // Step 3: record via MediaRecorder
     setProgress(40, '動画を生成中...', 'step 3 / 3 — しばらくお待ちください');
+    // Canvasへの描画が確実に反映されるまで少し待つ
+    await new Promise(r => setTimeout(r, 200));
     const videoBlob = await recordVideo(canvas, audioFile, duration);
 
     setProgress(100, '完成', '');
@@ -646,6 +648,18 @@ async function generate() {
 function recordVideo(canvas, audioFile, duration) {
   return new Promise(async (resolve, reject) => {
     try {
+      const ctx = canvas.getContext('2d');
+      const imageBitmap = await createImageBitmap(imgFile);
+
+      // 録画中ずっと画像を再描画し続けるループ
+      let recording = true;
+      function drawLoop() {
+        if (!recording) return;
+        drawCoverFit(ctx, imageBitmap, canvas.width, canvas.height);
+        requestAnimationFrame(drawLoop);
+      }
+      drawLoop();
+
       // Audio setup
       const audioCtx = new AudioContext();
       const arrayBuf = await audioFile.arrayBuffer();
@@ -653,7 +667,6 @@ function recordVideo(canvas, audioFile, duration) {
 
       const dest = audioCtx.createMediaStreamDestination();
 
-      // Fade out gain
       const gainNode = audioCtx.createGain();
       gainNode.connect(dest);
       gainNode.connect(audioCtx.destination);
@@ -694,15 +707,17 @@ function recordVideo(canvas, audioFile, duration) {
       recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
 
       recorder.onstop = () => {
+        recording = false;
         audioCtx.close();
         const blob = new Blob(chunks, { type: mimeType || 'video/webm' });
         resolve(blob);
       };
 
-      recorder.onerror = e => { audioCtx.close(); reject(e.error); };
+      recorder.onerror = e => { recording = false; audioCtx.close(); reject(e.error); };
 
-      // Start
+      // Start recording then start audio
       recorder.start(100);
+      await new Promise(r => setTimeout(r, 100)); // 録画が安定するまで待つ
       source.start(0);
 
       // Progress updates
@@ -713,7 +728,6 @@ function recordVideo(canvas, audioFile, duration) {
         setProgress(pct, '録画中...', `${Math.round(elapsed)}s / ${Math.round(duration)}s`);
       }, 500);
 
-      // Stop after duration
       source.onended = () => {
         clearInterval(timer);
         recorder.stop();
